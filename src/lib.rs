@@ -1,9 +1,11 @@
-use core::iter;
+use core::{
+    iter,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use futures::{
     channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-    stream,
-    stream::BoxStream,
-    Stream, StreamExt,
+    future, stream, Stream, StreamExt,
 };
 
 pub mod list;
@@ -65,35 +67,60 @@ impl<T: Clone + React + From<U>, U> From<Vec<U>> for ChannelList<T> {
     }
 }
 
+pub struct ListMap<T: React> {
+    stream: T::Stream,
+    index: u64,
+}
+
+impl<T: React> ListMap<T> {
+    fn new(index: u64, stream: T::Stream) -> Self {
+        ListMap { stream, index }
+    }
+}
+
+impl<T: React> Stream for ListMap<T>
+where
+    T::Stream: Unpin,
+{
+    type Item = list::Event<T>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.stream).poll_next(cx).map(|event| {
+            event.map(|event| list::Event::Update {
+                event,
+                index: self.index,
+            })
+        })
+    }
+}
+
 impl<T: Clone + React> React for ChannelList<T>
 where
-    T::Stream: Unpin + Send + 'static,
+    T::Stream: Unpin,
 {
     type Event = list::Event<T>;
 
-    type Stream = BoxStream<'static, list::Event<T>>;
+    type Stream = stream::SelectAll<
+        future::Either<ListMap<T>, stream::Map<UnboundedReceiver<u64>, fn(u64) -> list::Event<T>>>,
+    >;
+
     fn react(&mut self) -> Self::Stream {
         let (sender, receiver) = unbounded();
 
         self.senders.push(sender);
 
-        Box::pin(stream::select_all(
+        stream::select_all(
             self.data
                 .iter_mut()
                 .enumerate()
-                .map(|(index, data)| {
-                    let index = index as u64;
-                    data.react()
-                        .map(move |event| list::Event::<T>::Update { event, index })
-                        .left_stream()
-                })
+                .map(|(index, data)| ListMap::new(index as u64, data.react()).left_stream())
                 .chain(iter::once(
                     receiver
-                        .map(|index| list::Event::Remove(index))
+                        .map(list::Event::Remove as fn(u64) -> list::Event<T>)
                         .right_stream(),
                 )),
-        ))
+        )
     }
 }
 
-impl<T: Clone + React> List<T> for ChannelList<T> where T::Stream: Unpin + Send + 'static {}
+impl<T: Clone + React> List<T> for ChannelList<T> where T::Stream: Unpin {}
