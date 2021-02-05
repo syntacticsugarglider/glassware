@@ -1,0 +1,21 @@
+[package]
+name = "glassware"
+version = "0.1.0"
+authors = ["Izzy Swart <zenerboson@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+looking-glass = { git = "https://github.com/noocene/looking-glass" }
+futures = "0.3.5"
+core-error = { git = "https://github.com/core-error/core-error", default-features = false }
+thiserror = { git = "https://github.com/noocene/thiserror", default-features = false }
+protocol = { git = "https://github.com/noocene/protocol" }
+protocol-mve-transport = { git = "https://github.com/noocene/protocol-mve-transport", features = ["vessels"] }
+wasm-bindgen = "0.2.63"
+web-sys = { version = "0.3.40", features = ["console", "HtmlElement", "Window", "Document", "Node"] }
+js-sys = "0.3.40"
+console_error_panic_hook = "0.1.6"
+wasm-bindgen-futures = "0.4.13"
